@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Visualizer V2</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #000;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            flex-direction: column;
+        }
+        canvas {
+            border: 1px solid #222;
+            background-color: #000;
+        }
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 5px;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        button:hover {
+            background-color: #555;
+        }
+        button.active {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        #startButton {
+            margin-top: 20px;
+            font-size: 1.2em;
+            padding: 12px 24px;
+            background-color: #007bff;
+        }
+        #startButton:hover {
+            background-color: #0056b3;
+        }
+        .message {
+            margin-top: 15px;
+            font-size: 1.1em;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <h1>Voice Visualizer V2</h1>
+    <canvas id="audioVisualizer" width="800" height="400"></canvas>
+    <div id="controls">
+        <button class="style-btn active" data-style="waveform">Waveform</button>
+        <button class="style-btn" data-style="bars">Bars</button>
+        <button class="style-btn" data-style="circle">Circle</button>
+        <button class="style-btn" data-style="glowing_waves">Glowing Waves</button>
+        <button class="style-btn" data-style="particles">Particles</button>
+    </div>
+    <button id="startButton">Start Microphone</button>
+    <div class="message" id="statusMessage">Click "Start Microphone" to begin.</div>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const canvas = document.getElementById('audioVisualizer');
+        const ctx = canvas.getContext('2d');
+        const styleButtons = document.querySelectorAll('.style-btn');
+
+        let audioContext;
+        let analyser;
+        let microphone;
+        let animationFrameId;
+        let currentStyle = 'waveform';
+        let particlesArray = [];
+
+        // --- Event Listeners ---
+        startButton.addEventListener('click', toggleMicrophone);
+        styleButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                currentStyle = e.target.dataset.style;
+                styleButtons.forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+            });
+        });
+
+        async function toggleMicrophone() {
+            if (audioContext && audioContext.state === 'running') {
+                stopVisualizer();
+            } else {
+                await startVisualizer();
+            }
+        }
+
+        async function startVisualizer() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                statusMessage.textContent = 'Microphone active. Try speaking!';
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+
+                analyser.fftSize = 2048;
+                microphone.connect(analyser);
+                startButton.textContent = 'Stop Microphone';
+                
+                // Initialize particles if needed for that style
+                if(currentStyle === 'particles') initParticles();
+
+                draw();
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                statusMessage.textContent = 'Error: Could not access microphone.';
+            }
+        }
+
+        function stopVisualizer() {
+            if (microphone) {
+                microphone.mediaStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioContext) {
+                audioContext.close().then(() => {
+                    audioContext = null;
+                });
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            startButton.textContent = 'Start Microphone';
+            statusMessage.textContent = 'Click "Start Microphone" to begin.';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // --- Main Draw Loop ---
+        function draw() {
+            animationFrameId = requestAnimationFrame(draw);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Fading effect for smoother animation
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Choose which visualization to draw
+            switch (currentStyle) {
+                case 'waveform':
+                    drawWaveform();
+                    break;
+                case 'bars':
+                    drawBars();
+                    break;
+                case 'circle':
+                    drawCircle();
+                    break;
+                case 'glowing_waves':
+                    drawGlowingWaves();
+                    break;
+                case 'particles':
+                    drawParticles();
+                    break;
+            }
+        }
+
+        // --- Visualization Functions ---
+
+        function drawWaveform() {
+            const bufferLength = analyser.fftSize;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#00ffff';
+            ctx.beginPath();
+            const sliceWidth = canvas.width * 1.0 / bufferLength;
+            let x = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * canvas.height / 2;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+                x += sliceWidth;
+            }
+            ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+        }
+
+        function drawBars() {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            const barWidth = (canvas.width / bufferLength) * 2.5;
+            let x = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = dataArray[i];
+                const r = barHeight + (25 * (i/bufferLength));
+                const g = 250 * (i/bufferLength);
+                const b = 50;
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+        }
+
+        function drawCircle() {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+            
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = 80;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = dataArray[i] * 0.7;
+                const angle = (i / bufferLength) * 2 * Math.PI;
+
+                const x1 = centerX + radius * Math.cos(angle);
+                const y1 = centerY + radius * Math.sin(angle);
+                const x2 = centerX + (radius + barHeight) * Math.cos(angle);
+                const y2 = centerY + (radius + barHeight) * Math.sin(angle);
+                
+                const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+                gradient.addColorStop(0, `hsl(${i * 2}, 100%, 50%)`);
+                gradient.addColorStop(1, 'white');
+
+                ctx.strokeStyle = gradient;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+        }
+        
+        function drawGlowingWaves() {
+            const bufferLength = analyser.fftSize;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            const colors = ['#ff00ff', '#00ffff', '#ffffff']; // Magenta, Cyan, White
+            const opacities = [0.4, 0.6, 1.0];
+            const offsets = [5, 0, -5];
+
+            colors.forEach((color, index) => {
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = color;
+                ctx.globalAlpha = opacities[index];
+                ctx.beginPath();
+                const sliceWidth = canvas.width * 1.0 / bufferLength;
+                let x = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const v = dataArray[i] / 128.0;
+                    const y = (v * canvas.height / 2) + offsets[index];
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                    x += sliceWidth;
+                }
+                ctx.lineTo(canvas.width, canvas.height / 2);
+                ctx.stroke();
+            });
+            ctx.globalAlpha = 1.0; // Reset global alpha
+        }
+        
+        function initParticles() {
+            particlesArray = [];
+            for (let i = 0; i < 100; i++) {
+                particlesArray.push({
+                    x: canvas.width / 2,
+                    y: canvas.height / 2,
+                    radius: Math.random() * 3 + 1,
+                    // Velocity
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    alpha: 1
+                });
+            }
+        }
+
+        function drawParticles() {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            let audioSum = dataArray.reduce((a, b) => a + b, 0);
+            let average = audioSum / bufferLength || 0;
+            let intensity = Math.min(average / 100, 1);
+
+            particlesArray.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= 0.01;
+
+                // Reset particle if it's invisible or off-screen
+                if (p.alpha <= 0 || p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    p.x = canvas.width / 2;
+                    p.y = canvas.height / 2;
+                    p.vx = (Math.random() - 0.5) * 4 * (1 + intensity * 4); // Speed up with intensity
+                    p.vy = (Math.random() - 0.5) * 4 * (1 + intensity * 4);
+                    p.alpha = 1;
+                }
+                
+                const hue = (performance.now() / 10) % 360; // Evolving color
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius * (1 + intensity), 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${hue}, 100%, 70%, ${p.alpha})`;
+                ctx.fill();
+            });
+        }
+    </script>
+</body>
+</html>
