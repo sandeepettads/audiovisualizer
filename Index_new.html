@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure OpenAI Realtime Session</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8f9fa;
+        }
+        h1 {
+            color: #2d3e50;
+            margin-top: 0.5em;
+        }
+        #logContainer {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 1em;
+            margin-top: 1.5em;
+            max-width: 700px;
+            min-height: 60px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        button {
+            background: #0078d4;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 0.6em 1.2em;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 1em;
+        }
+        button:hover {
+            background: #005fa3;
+        }
+        p {
+            margin: 0.3em 0;
+        }
+        
+        /* Tab Navigation Styles */
+        .tab-navigation {
+            display: flex;
+            background: #fff;
+            padding: 0;
+            width: 100%;
+            border-bottom: 2px solid #0078d4;
+        }
+        .tab-button {
+            background: #e6e6e6;
+            border: none;
+            padding: 12px 20px;
+            margin: 0;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px 4px 0 0;
+            transition: background 0.3s;
+        }
+        .tab-button:hover {
+            background: #d4d4d4;
+        }
+        .tab-button.active {
+            background: #0078d4;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Modern UI Styles */
+        /* Global page style modifications */
+        body > button[onclick="startSession"],
+        body > button:not([id="startSessionBtn"]):not([id="modernStartSessionBtn"]),
+        body > button:contains("Start Session") {
+            display: none !important; /* Hide any top-level Start Session buttons */
+        }
+        body > button[onclick*="startSession"] {
+            display: none !important; /* Hide any buttons with onclick containing startSession */
+        }
+        body > .wave-container {
+            display: none !important; /* Hide any top-level wave containers */
+        }
+        
+        #modern-ui {
+            background: #ffffff;
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #modern-ui button {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 10px 24px;
+            transition: all 0.3s;
+            z-index: 2;
+        }
+        #modern-ui button:hover {
+            background: #0066b3;
+            transform: translateX(-50%) translateY(-2px);
+        }
+        #modern-ui #modernCloseSessionBtn {
+            left: calc(50% + 120px);
+            transform: translateX(-50%);
+        }
+        #modern-ui #modernCloseSessionBtn:hover {
+            transform: translateX(-50%) translateY(-2px);
+        }
+        /* Only apply wave-container styling to modern UI tab with specific ID */
+        #modern-wave-container.wave-container {
+            width: 800px;
+            height: 400px;
+            background: #121212;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        /* Hide any other wave containers that might appear */
+        .wave-container:not(#modern-wave-container) {
+            display: none !important;
+        }
+        #modern-ui #waveCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+        }
+        #modern-ui .content-container {
+            position: relative;
+            z-index: 1;
+        }
+        .warning-text {
+            color: #b71c1c;
+            font-weight: bold;
+        }
+        /* Enhanced Audio Visualizer Styles */
+        .visualizer-container {
+            position: relative;
+            width: 800px;
+            margin: 20px auto;
+        }
+        .visualizer-toggle {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .visualizer-toggle button {
+            margin: 0 5px;
+            padding: 5px 10px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            transform: none;
+            left: auto;
+            top: auto;
+        }
+        .visualizer-toggle button.active {
+            background: #005fa3;
+        }
+        #waveformVisualizer {
+            border: 1px solid #333;
+            background-color: #000;
+            display: none;
+            width: 800px;
+            height: 200px;
+        }
+        #audioVisualizer {
+            display: block;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="tab-navigation">
+        <button class="tab-button active" data-tab="original">Original UI</button>
+        <button class="tab-button" data-tab="modern">Modern Wave UI</button>
+    </div>
+    
+    <div id="original-ui" class="tab-content active">
+        <h1>Azure OpenAI Realtime Session</h1>
+        <p class="warning-text">WARNING: Don't use this code sample in production with the API key hardcoded. Use a protected backend service to call the sessions API and generate the ephemeral key. Then return the ephemeral key to the client.</p>
+        <button id="startSessionBtn" onclick="startSession('original')">Start Session</button>
+        <button id="closeSessionBtn" style="display:none; margin-left: 1em;">Close Session</button>
+        <div id="logContainer"></div>
+        <!-- Voice animation container -->
+        <div id="voiceAnimation" style="position: fixed; top: 30%; right: 3em; width: 60px; height: 120px; display: flex; align-items: flex-end; justify-content: center;">
+            <div id="voiceBar" style="width: 30px; height: 20px; background: #0078d4; border-radius: 8px 8px 4px 4px; transition: height 0.1s, background 0.2s;"></div>
+        </div>
+        <!-- Audio visualizer container -->
+        <div class="visualizer-container">
+            <div class="visualizer-toggle">
+                <button id="barVisualizerBtn" class="active" onclick="toggleVisualizer('bar')">Bar Visualizer</button>
+                <button id="waveformVisualizerBtn" onclick="toggleVisualizer('waveform')">Waveform Visualizer</button>
+            </div>
+            <canvas id="audioVisualizer" width="800" height="120" style="background: transparent;"></canvas>
+            <canvas id="waveformVisualizer" width="800" height="200"></canvas>
+        </div>
+    </div>
+    
+    <div id="modern-ui" class="tab-content">
+        <button id="modernStartSessionBtn" onclick="startSession('modern')">Start Session</button>
+        <button id="modernCloseSessionBtn" style="display:none;">Close Session</button>
+        <div id="modern-wave-container" class="wave-container">
+            <canvas id="waveCanvas"></canvas>
+        </div>
+        <div id="modernLogContainer" style="display:none;"></div>
+    <script>
+        // Global variables for audio visualization
+        let audioContext;
+        let analyser;
+        let microphone;
+        let currentAudioSource = null;
+        
+        // Tab Navigation Logic
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Remove active class from all buttons and content
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                    
+                    // Add active class to clicked button and its content
+                    this.classList.add('active');
+                    document.getElementById(this.dataset.tab + '-ui').classList.add('active');
+                    
+                    // Initialize wave animation if switching to modern UI
+                    if (this.dataset.tab === 'modern') {
+                        initWaveAnimation();
+                    }
+                });
+            });
+        });
+        
+        // Configuration
+
+        const VOICE = "verse";
+
+        // Track the current UI mode
+        let currentMode = 'original';
+        
+        async function startSession(mode) {
+            currentMode = mode || 'original';
+            try {
+                const response = await fetch(SESSIONS_URL, {
+                    method: "POST",
+                    headers: {
+                        "api-key": API_KEY,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ model: DEPLOYMENT, voice: VOICE })
+                });
+                if (!response.ok) throw new Error("API request failed");
+                const data = await response.json();
+                const sessionId = data.id;
+                const ephemeralKey = data.client_secret?.value;
+                logMessage("Ephemeral Key Received: ***");
+                logMessage("WebRTC Session Id = " + sessionId);
+                initWebRTC(ephemeralKey);
+            } catch (error) {
+                console.error("Error fetching ephemeral key:", error);
+                logMessage("Error fetching ephemeral key: " + error.message);
+            }
+        }
+
+        async function initWebRTC(ephemeralKey) {
+            logMessage(`WebRTC: Initializing with key ${ephemeralKey.slice(0, 5)}...`);
+            const audioElement = document.createElement('audio');
+            audioElement.autoplay = true;
+            document.body.appendChild(audioElement);
+            let peerConnection = new RTCPeerConnection();
+            peerConnection.ontrack = function(event) {
+                logMessage("WebRTC: Received remote track");
+                audioElement.srcObject = event.streams[0];
+                
+                // Start voice animation when the audio is playing
+                audioElement.onplay = () => {
+                    // Stop previous animation if any
+                    stopVoiceAnimation();
+                    // Start new animation with the audio element
+                    currentAudioSource = startVoiceAnimation(audioElement);
+                };
+            };
+            // Request microphone access for the session
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    // Add local audio tracks to the connection
+                    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+                    logMessage("Media: Microphone access granted and tracks added");
+                    
+                    // Visualize microphone input when speaking
+                    microphone = stream;
+                    // Set up microphone visualization but don't start it yet
+                    // It will start when the user speaks (detected in dataChannel.onopen)
+                })
+                .catch(err => {
+                    console.error("Error accessing microphone:", err);
+                    logMessage("Media: Error accessing microphone - " + err.message);
+                });
+            const clientMedia = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioTrack = clientMedia.getAudioTracks()[0];
+            peerConnection.addTrack(audioTrack);
+            const dataChannel = peerConnection.createDataChannel('realtime-channel');
+            dataChannel.addEventListener('open', () => {
+                logMessage('Data channel is open');
+                sendSessionUpdate(dataChannel);
+                
+                // Start visualizing microphone input when session is active
+                if (microphone) {
+                    stopVoiceAnimation(); // Stop any existing visualization
+                    currentAudioSource = startVoiceAnimation(microphone, true);
+                }
+            });
+            dataChannel.addEventListener('message', (event) => {
+                handleRealtimeEvent(event.data);
+            });
+            dataChannel.addEventListener('close', () => {
+                logMessage('Data channel is closed');
+            });
+            // SDP negotiation
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            const sdpResponse = await fetch(`${WEBRTC_URL}?model=${DEPLOYMENT}`, {
+                method: "POST",
+                body: offer.sdp,
+                headers: {
+                    Authorization: `Bearer ${ephemeralKey}`,
+                    "Content-Type": "application/sdp",
+                },
+            });
+            const answer = { type: "answer", sdp: await sdpResponse.text() };
+            await peerConnection.setRemoteDescription(answer);
+            // Show Close Session button based on current mode
+            const buttonId = currentMode === 'modern' ? 'modernCloseSessionBtn' : 'closeSessionBtn';
+            const closeBtn = document.getElementById(buttonId);
+            closeBtn.style.display = '';
+            closeBtn.onclick = () => stopSession(dataChannel, peerConnection);
+        }
+
+        function sendSessionUpdate(dataChannel) {
+            const event = {
+                type: "session.update",
+                session: {
+                    instructions: "You are a helpful AI assistant responding in natural, engaging language."
+                }
+            };
+            dataChannel.send(JSON.stringify(event));
+            logMessage("Sent client event: " + JSON.stringify(event, null, 2));
+        }
+
+        function handleRealtimeEvent(data) {
+            const event = JSON.parse(data);
+            logMessage("Received server event: " + JSON.stringify(event, null, 2));
+            if (event.type === "session.update") {
+                logMessage("Instructions: " + event.session.instructions);
+            } else if (event.type === "session.error") {
+                logMessage("Error: " + event.error.message);
+            } else if (event.type === "session.end") {
+                logMessage("Session ended.");
+            }
+        }
+
+        function stopSession(dataChannel, peerConnection) {
+            if (dataChannel) dataChannel.close();
+            if (peerConnection) peerConnection.close();
+            logMessage("Session closed.");
+            // Hide Close Session button after closing
+            const buttonId = currentMode === 'modern' ? 'modernCloseSessionBtn' : 'closeSessionBtn';
+            document.getElementById(buttonId).style.display = 'none';
+        }
+
+        function logMessage(message) {
+    // Determine which log container to use based on current mode
+    const containerID = currentMode === 'modern' ? 'modernLogContainer' : 'logContainer';
+    const logContainer = document.getElementById(containerID);
+    
+    // Only append to log container if it exists
+    if (logContainer) {
+        const p = document.createElement("p");
+        p.textContent = message;
+        logContainer.appendChild(p);
+    }
+    
+    // Always log to console for debugging
+    console.log(message);
+}
+
+        // Voice animation logic
+        let animationId;
+        let visualizerId;
+        let waveformAnimationId;
+        let currentVisualizerType = 'bar'; // Default visualizer type
+        /**
+         * Toggle between bar and waveform visualizers
+         * @param {string} type - 'bar' or 'waveform'
+         */
+        function toggleVisualizer(type) {
+            currentVisualizerType = type;
+            const barBtn = document.getElementById('barVisualizerBtn');
+            const waveBtn = document.getElementById('waveformVisualizerBtn');
+            const barVisualizer = document.getElementById('audioVisualizer');
+            const waveformVisualizer = document.getElementById('waveformVisualizer');
+            
+            if (type === 'bar') {
+                barBtn.classList.add('active');
+                waveBtn.classList.remove('active');
+                barVisualizer.style.display = 'block';
+                waveformVisualizer.style.display = 'none';
+            } else {
+                barBtn.classList.remove('active');
+                waveBtn.classList.add('active');
+                barVisualizer.style.display = 'none';
+                waveformVisualizer.style.display = 'block';
+            }
+        }
+
+        /**
+         * Start audio visualization from an audio element or stream
+         * @param {HTMLAudioElement|MediaStream} source - Audio element or stream to visualize
+         * @param {boolean} isStream - Whether the source is a MediaStream
+         */
+        function startVoiceAnimation(source, isStream = false) {
+            const voiceBar = document.getElementById('voiceBar');
+            const barVisualizer = document.getElementById('audioVisualizer');
+            const waveformVisualizer = document.getElementById('waveformVisualizer');
+            const vctx = barVisualizer.getContext('2d');
+            const wctx = waveformVisualizer.getContext('2d');
+            
+            // Clean up any previous audio context
+            stopVoiceAnimation();
+            
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioCtx.createAnalyser();
+            
+            // Set up analyser with higher resolution for waveform visualization
+            analyser.fftSize = 2048;
+            
+            // Set up the appropriate source based on input type
+            let audioSource;
+            if (isStream) {
+                audioSource = audioCtx.createMediaStreamSource(source);
+            } else {
+                audioSource = audioCtx.createMediaElementSource(source);
+                // Only connect to destination for audio elements (not for microphone)
+                analyser.connect(audioCtx.destination);
+            }
+            
+            audioSource.connect(analyser);
+            
+            // Create data arrays for both visualizations
+            const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+            const waveformData = new Uint8Array(analyser.frequencyBinCount);
+            // Voice bar animation
+            function animateBar() {
+                analyser.getByteFrequencyData(frequencyData);
+                let sum = 0;
+                for (let i = 0; i < frequencyData.length; i++) sum += frequencyData[i];
+                const avg = sum / frequencyData.length;
+                const height = Math.max(20, Math.min(100, avg * 1.2));
+                
+                if (voiceBar) {
+                    voiceBar.style.height = height + 'px';
+                    if (avg > 80) {
+                        voiceBar.style.background = '#e53935';
+                    } else if (avg > 40) {
+                        voiceBar.style.background = '#fbc02d';
+                    } else {
+                        voiceBar.style.background = '#0078d4';
+                    }
+                }
+                
+                animationId = requestAnimationFrame(animateBar);
+            }
+            // Bar visualizer animation
+            function animateVisualizer() {
+                analyser.getByteFrequencyData(frequencyData);
+                vctx.clearRect(0, 0, barVisualizer.width, barVisualizer.height);
+                const barWidth = 6;
+                const barGap = 2;
+                const bars = Math.floor(barVisualizer.width / (barWidth + barGap));
+                for (let i = 0; i < bars; i++) {
+                    const value = frequencyData[i] || 0;
+                    const barHeight = value / 255 * barVisualizer.height;
+                    vctx.fillStyle = value > 180 ? '#e53935' : value > 100 ? '#fbc02d' : '#0078d4';
+                    vctx.fillRect(i * (barWidth + barGap), barVisualizer.height - barHeight, barWidth, barHeight);
+                }
+                visualizerId = requestAnimationFrame(animateVisualizer);
+            }
+            
+            // Waveform visualizer animation (from audiovisualizer.html)
+            function animateWaveform() {
+                // Get waveform data
+                analyser.getByteTimeDomainData(waveformData);
+                
+                // Clear previous frame
+                wctx.clearRect(0, 0, waveformVisualizer.width, waveformVisualizer.height);
+                
+                // Style for the waveform
+                wctx.lineWidth = 2;
+                wctx.strokeStyle = 'rgb(0, 255, 255)'; // Cyan color for waveform
+                
+                // Begin drawing path
+                wctx.beginPath();
+                
+                const sliceWidth = waveformVisualizer.width / waveformData.length;
+                let x = 0;
+                
+                for (let i = 0; i < waveformData.length; i++) {
+                    const v = waveformData[i] / 128.0; // Normalize data to 0-2
+                    const y = v * waveformVisualizer.height / 2; // Scale to canvas height
+                    
+                    if (i === 0) {
+                        wctx.moveTo(x, y);
+                    } else {
+                        wctx.lineTo(x, y);
+                    }
+                    
+                    x += sliceWidth;
+                }
+                
+                // Complete the path and draw it
+                wctx.lineTo(waveformVisualizer.width, waveformVisualizer.height / 2);
+                wctx.stroke();
+                
+                waveformAnimationId = requestAnimationFrame(animateWaveform);
+            }
+            // Start the appropriate animations
+            animateBar();
+            animateVisualizer();
+            animateWaveform();
+            
+            // For audio element sources, set up the onended event
+            if (!isStream && source.onended) {
+                source.onended = () => {
+                    stopVoiceAnimation();
+                    if (voiceBar) {
+                        voiceBar.style.height = '20px';
+                        voiceBar.style.background = '#0078d4';
+                    }
+                };
+            }
+            
+            return { audioCtx, analyser, audioSource }; // Return references for potential cleanup
+        }
+        // Modern Wave Animation
+        let waveAnimationId;
+        let waveContext;
+        let waveCanvas;
+        let waveAnalyser;
+        let waveDataArray;
+        
+        // Audio threshold settings for detecting speech
+        const AUDIO_THRESHOLD = 15; // Threshold value to determine if audio input is present
+        const AUDIO_QUIET_FRAMES = 20; // Number of consecutive quiet frames needed to switch to idle animation
+        let quietFrameCount = 0; // Counter for consecutive frames below threshold
+        let isAudioActive = false; // Flag to track if audio is currently active
+        
+        function initWaveAnimation() {
+            // Only initialize if modern tab is active
+            if (!document.getElementById('modern-ui').classList.contains('active')) return;
+            
+            waveCanvas = document.getElementById('waveCanvas');
+            if (!waveCanvas) return;
+            
+            // Get container dimensions instead of window dimensions
+            const container = document.querySelector('#modern-ui .wave-container');
+            if (!container) return;
+            
+            // Set canvas to container size
+            waveCanvas.width = container.clientWidth;
+            waveCanvas.height = container.clientHeight;
+            waveContext = waveCanvas.getContext('2d');
+            
+            // Handle resize
+            window.addEventListener('resize', function() {
+                // Only update if modern tab is active
+                if (document.getElementById('modern-ui').classList.contains('active') && waveCanvas) {
+                    waveCanvas.width = container.clientWidth;
+                    waveCanvas.height = container.clientHeight;
+                }
+            });
+            
+            // Draw initial idle animation
+            drawIdleWaveAnimation();
+        }
+        
+        function drawIdleWaveAnimation() {
+            // Only run in modern mode AND when modern tab is active
+            if (currentMode !== 'modern' || !document.getElementById('modern-ui').classList.contains('active')) return;
+            
+            if (!waveContext || !waveCanvas) {
+                initWaveAnimation();
+            }
+            
+            // Reset audio activity tracking
+            isAudioActive = false;
+            quietFrameCount = AUDIO_QUIET_FRAMES;
+            
+            let time = Date.now() * 0.001;
+            const animate = () => {
+                waveContext.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+                
+                time = Date.now() * 0.001;
+                const centerY = waveCanvas.height / 2;
+                
+                // Create gradient with subtle colors
+                const gradient = waveContext.createLinearGradient(0, centerY - 100, 0, centerY + 100);
+                
+                // Slightly animated gradient colors
+                const colorPhase = Math.sin(time * 0.2) * 0.1;
+                gradient.addColorStop(0, `rgba(${156 + colorPhase * 20}, ${39 + colorPhase * 10}, ${176 + colorPhase * 20}, 1)`);  // Purple
+                gradient.addColorStop(0.5, `rgba(${233 + colorPhase * 10}, ${30 + colorPhase * 5}, ${99 + colorPhase * 10}, 1)`); // Pink
+                gradient.addColorStop(1, `rgba(${33 + colorPhase * 10}, ${150 + colorPhase * 15}, ${243 + colorPhase * 5}, 1)`);   // Blue
+                
+                waveContext.beginPath();
+                
+                // Gentle amplitude for idle state with slight variation over time
+                const baseAmplitude = 10 + Math.sin(time * 0.3) * 3;
+                
+                // Draw gentle wave with multiple overlapping sine waves
+                for (let x = 0; x < waveCanvas.width; x++) {
+                    // Use normalized x position for creating different wave patterns
+                    const normalizedX = x / waveCanvas.width;
+                    
+                    // Calculate y position with multiple sine waves at different frequencies
+                    const y = centerY + 
+                              Math.sin(x * 0.008 + time * 0.4) * baseAmplitude * 0.7 + 
+                              Math.sin(x * 0.015 + time * 0.8) * baseAmplitude * 0.5 + 
+                              Math.sin(x * 0.003 + time * 0.2) * baseAmplitude * 0.9 + 
+                              // Add a subtle "breathing" effect
+                              Math.sin(time * 0.4) * 5;
+                              
+                    if (x === 0) {
+                        waveContext.moveTo(x, y);
+                    } else {
+                        waveContext.lineTo(x, y);
+                    }
+                }
+                
+                // Complete the path
+                waveContext.lineTo(waveCanvas.width, waveCanvas.height);
+                waveContext.lineTo(0, waveCanvas.height);
+                waveContext.closePath();
+                
+                // Fill with gradient
+                waveContext.fillStyle = gradient;
+                waveContext.fill();
+                
+                // Subtle animated glow
+                const glowIntensity = 8 + Math.sin(time * 0.8) * 3;
+                waveContext.shadowBlur = glowIntensity;
+                
+                // Shift glow color slowly
+                const hue = (time * 10) % 360;
+                if (hue < 120) {
+                    waveContext.shadowColor = '#9C27B0'; // Purple
+                } else if (hue < 240) {
+                    waveContext.shadowColor = '#E91E63'; // Pink
+                } else {
+                    waveContext.shadowColor = '#2196F3'; // Blue
+                }
+                
+                waveAnimationId = requestAnimationFrame(animate);
+            };
+            
+            animate();
+        }
+
+        function startWaveAnimation(audioElement) {
+            // Only run if in modern mode AND modern tab is active
+            if (currentMode !== 'modern' || !document.getElementById('modern-ui').classList.contains('active')) return;
+            
+            // Cancel any existing animation
+            if (waveAnimationId) {
+                cancelAnimationFrame(waveAnimationId);
+            }
+            
+            // Set up audio analyzer with better settings for visualization
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            waveAnalyser = audioCtx.createAnalyser();
+            waveAnalyser.fftSize = 1024; // Increased from 256 for better frequency resolution
+            waveAnalyser.smoothingTimeConstant = 0.5; // Balance between smooth animation and responsiveness
+            const source = audioCtx.createMediaElementSource(audioElement);
+            source.connect(waveAnalyser);
+            waveAnalyser.connect(audioCtx.destination);
+            waveDataArray = new Uint8Array(waveAnalyser.frequencyBinCount);
+            
+            // Log to verify that audio data is being received
+            console.log('Audio analyzer connected. Frequency bins:', waveAnalyser.frequencyBinCount);
+            
+            // Start the animation
+            animateWave();
+            
+            // Handle audio end
+            audioElement.onended = () => {
+                // Only show idle animation if still in modern tab
+                if (document.getElementById('modern-ui').classList.contains('active')) {
+                    cancelAnimationFrame(waveAnimationId);
+                    drawIdleWaveAnimation();
+                }
+            };
+        }
+        
+        function animateWave() {
+            // Only run in modern mode AND when modern tab is active
+            if (currentMode !== 'modern' || !document.getElementById('modern-ui').classList.contains('active')) return;
+            
+            // Get audio data
+            waveAnalyser.getByteFrequencyData(waveDataArray);
+            
+            // Calculate average frequency value for animation intensity
+            let sum = 0;
+            let bassSum = 0;
+            let midSum = 0;
+            let trebleSum = 0;
+            
+            // Split frequency range into bass, mid and treble regions
+            const bassRange = Math.floor(waveDataArray.length * 0.33);
+            const midRange = Math.floor(waveDataArray.length * 0.66);
+            
+            for (let i = 0; i < waveDataArray.length; i++) {
+                sum += waveDataArray[i];
+                if (i < bassRange) {
+                    bassSum += waveDataArray[i];
+                } else if (i < midRange) {
+                    midSum += waveDataArray[i];
+                } else {
+                    trebleSum += waveDataArray[i];
+                }
+            }
+            
+            const avg = sum / waveDataArray.length;
+            const bassAvg = bassSum / bassRange;
+            const midAvg = midSum / (midRange - bassRange);
+            const trebleAvg = trebleSum / (waveDataArray.length - midRange);
+            
+            // Debug: Periodically log audio levels to check if we're getting data
+            if (Math.random() < 0.01) { // Log approximately once every 100 frames
+                console.log('Audio level:', avg, 'Active:', isAudioActive, 'Quiet frames:', quietFrameCount);
+            }
+            
+            // Check if audio is present based on threshold
+            if (avg > AUDIO_THRESHOLD) {
+                // Audio detected
+                quietFrameCount = 0;
+                if (!isAudioActive) {
+                    isAudioActive = true;
+                    console.log('Audio activity detected, switching to dynamic wave');
+                }
+            } else {
+                // No audio detected
+                quietFrameCount++;
+                
+                // If we've had enough consecutive quiet frames, switch to idle animation
+                if (quietFrameCount >= AUDIO_QUIET_FRAMES && isAudioActive) {
+                    isAudioActive = false;
+                    console.log('Audio inactive, switching to idle wave');
+                }
+            }
+            
+            // Use appropriate animation based on audio activity
+            if (!isAudioActive) {
+                // Render static/idle wave when no audio is present
+                renderIdleWave();
+                waveAnimationId = requestAnimationFrame(animateWave);
+                return;
+            }
+            
+            const intensity = Math.min(100, avg * 3.5); // Increased multiplier for more visible reactivity
+            
+            waveContext.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+            
+            const time = Date.now() * 0.001;
+            const centerY = waveCanvas.height / 2;
+            
+            // Create gradient with dynamic colors based on frequency distribution
+            const gradient = waveContext.createLinearGradient(0, centerY - 120, 0, centerY + 120);
+            
+            // Dynamic colors based on audio characteristics
+            const bassInfluence = Math.min(1, bassAvg / 200);
+            const trebleInfluence = Math.min(1, trebleAvg / 200);
+            
+            // Create more vibrant colors when sound is present
+            if (avg > 60) {
+                gradient.addColorStop(0, `rgba(${142 + bassInfluence * 40}, ${36 + bassInfluence * 30}, ${170 + bassInfluence * 40}, 1)`);    // Purple
+                gradient.addColorStop(0.5, `rgba(${233 + midAvg/10}, ${30 + midAvg/10}, ${99 + midAvg/10}, 1)`);  // Pink
+                gradient.addColorStop(1, `rgba(${25 + trebleInfluence * 30}, ${118 + trebleInfluence * 40}, ${210 + trebleInfluence * 20}, 1)`);    // Blue
+            } else {
+                gradient.addColorStop(0, '#9C27B0');    // Purple
+                gradient.addColorStop(0.5, '#E91E63');  // Pink
+                gradient.addColorStop(1, '#2196F3');    // Blue
+            }
+            
+            waveContext.beginPath();
+            
+            // Multiple waves with different frequencies and amplitudes
+            // affected by different audio bands
+            
+            // Base amplitude dynamically adjusted by overall intensity with higher multiplier
+            const baseAmplitude = 15 + (intensity * 3.0);
+            
+            // Draw wave with enhanced audio reactivity
+            for (let x = 0; x < waveCanvas.width; x++) {
+                // Map x position to frequency data with higher precision
+                const freqIndex = Math.floor(x / waveCanvas.width * waveDataArray.length);
+                const freqValue = waveDataArray[freqIndex] || 0;
+                const freqFactor = freqValue / 255; // Normalize to 0-1
+                
+                // Get specific band values for this x position
+                const bandPosition = x / waveCanvas.width; // 0 to 1
+                let bandFactor;
+                
+                if (bandPosition < 0.33) {
+                    // Bass frequencies affect the left side more
+                    bandFactor = bassAvg / 255;
+                } else if (bandPosition < 0.66) {
+                    // Mid frequencies affect the middle more
+                    bandFactor = midAvg / 255;
+                } else {
+                    // Treble frequencies affect the right side more
+                    bandFactor = trebleAvg / 255;
+                }
+                
+                // Enhanced wave function with more dynamic behavior and increased reactivity
+                const y = centerY + 
+                          Math.sin(x * 0.008 + time * 0.8) * baseAmplitude * (1 + bandFactor * 2.0) + 
+                          Math.sin(x * 0.018 + time * 1.2) * baseAmplitude * 0.8 * (1 + freqFactor * 1.8) + 
+                          Math.sin(x * 0.005 + time * 0.4) * baseAmplitude * 1.2 * (1 + bandFactor * 1.5) +
+                          // Add quick oscillations that respond to treble with higher multiplier
+                          Math.sin(x * 0.03 + time * 2.0) * baseAmplitude * 0.8 * trebleAvg / 255;
+                          
+                if (x === 0) {
+                    waveContext.moveTo(x, y);
+                } else {
+                    waveContext.lineTo(x, y);
+                }
+            }
+            
+            // Complete the path
+            waveContext.lineTo(waveCanvas.width, waveCanvas.height);
+            waveContext.lineTo(0, waveCanvas.height);
+            waveContext.closePath();
+            
+            // Fill with gradient
+            waveContext.fillStyle = gradient;
+            waveContext.fill();
+            
+            // Adjust glow effect based on audio intensity
+            const glowIntensity = Math.max(10, Math.min(30, 10 + avg / 2));
+            waveContext.shadowBlur = glowIntensity;
+            
+            // Dynamic glow color based on dominant frequencies
+            if (bassAvg > midAvg && bassAvg > trebleAvg) {
+                waveContext.shadowColor = '#9C27B0'; // Purple glow for bass
+            } else if (midAvg > trebleAvg) {
+                waveContext.shadowColor = '#E91E63'; // Pink glow for mids
+            } else {
+                waveContext.shadowColor = '#2196F3'; // Blue glow for treble
+            }
+            
+            waveAnimationId = requestAnimationFrame(animateWave);
+        }
+        
+        // Function to render idle/static wave with minimal movement
+        function renderIdleWave() {
+            waveContext.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+            
+            const time = Date.now() * 0.001;
+            const centerY = waveCanvas.height / 2;
+            
+            // Create gradient with subtle colors for idle state
+            const gradient = waveContext.createLinearGradient(0, centerY - 100, 0, centerY + 100);
+            
+            // Slightly animated gradient colors
+            const colorPhase = Math.sin(time * 0.2) * 0.1;
+            gradient.addColorStop(0, `rgba(${156 + colorPhase * 20}, ${39 + colorPhase * 10}, ${176 + colorPhase * 20}, 1)`);  // Purple
+            gradient.addColorStop(0.5, `rgba(${233 + colorPhase * 10}, ${30 + colorPhase * 5}, ${99 + colorPhase * 10}, 1)`); // Pink
+            gradient.addColorStop(1, `rgba(${33 + colorPhase * 10}, ${150 + colorPhase * 15}, ${243 + colorPhase * 5}, 1)`);   // Blue
+            
+            waveContext.beginPath();
+            
+            // Gentle amplitude for idle state with slight variation over time
+            const baseAmplitude = 10 + Math.sin(time * 0.2) * 3;
+            
+            // Draw gentle wave with minimal movement
+            for (let x = 0; x < waveCanvas.width; x++) {
+                // Calculate y position with subtle sine waves
+                const y = centerY + 
+                          Math.sin(x * 0.008 + time * 0.2) * baseAmplitude * 0.7 + 
+                          Math.sin(x * 0.015 + time * 0.4) * baseAmplitude * 0.4 + 
+                          Math.sin(x * 0.003 + time * 0.1) * baseAmplitude * 0.6;
+                          
+                if (x === 0) {
+                    waveContext.moveTo(x, y);
+                } else {
+                    waveContext.lineTo(x, y);
+                }
+            }
+            
+            // Complete the path
+            waveContext.lineTo(waveCanvas.width, waveCanvas.height);
+            waveContext.lineTo(0, waveCanvas.height);
+            waveContext.closePath();
+            
+            // Fill with gradient
+            waveContext.fillStyle = gradient;
+            waveContext.fill();
+            
+            // Subtle glow
+            waveContext.shadowBlur = 8;
+            waveContext.shadowColor = '#9C27B0';
+        }
+        
+        // Initialize the modern UI wave animation on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // We'll initialize wave animation when user switches to modern tab
+        });
+    </script>
+</body>
+</html>
